@@ -1,0 +1,13 @@
+:root {
+	--ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.gh-reveal.in-view {
+	opacity: 1;
+	transform: translateY(0);
+}
+.gh-reveal {
+	opacity: 0;
+	transform: translateY(16px);
+	transition: opacity 600ms var(--ease), transform 600ms var(--ease);
+}
