@@ -5,7 +5,7 @@
   - **company**: Instellingen > Bedrijfsgegevens, shortcodes, block bindings source `goedehosting/company`. All fields empty by default; extra fields via a filter.
   - **contact-form**: block "Goede Hosting Contactformulier", stored submissions (Inzendingen), Inzendingen > Instellingen (recipient, retention), privacy export/erase, daily cleanup. Fields, markup (template override) and CSS adjustable per theme.
   - **importer**: Weergave > Goede Hosting Importeer Inhoud (content packages), plus the reset of page templates a previous theme left behind.
-  - **whatsapp-button**: floating WhatsApp button, switched on in Bedrijfsgegevens.
+  - **whatsapp-button**: floating WhatsApp button, switched on in Bedrijfsgegevens. Shows the official WhatsApp logo (inline SVG) on a green 50px circle, like the button on goedehosting.nl.
 - Modules can be switched off with the filter `goede_hosting_modules`; a theme that still contains a feature itself keeps it (the module stays off, with a notice).
 - Existing data keeps working: same option names, post type `gh_inzending`, meta keys and shortcodes as the theme used.
 - Update check: cached for six hours (GitHub API rate limit), version header and constant now match.
