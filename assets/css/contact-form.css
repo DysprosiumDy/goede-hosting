@@ -1,0 +1,102 @@
+/* Goede Hosting: contact form (module contact-form). Neutral; follows the theme's colours and fonts. */
+.gh-form {
+	display: grid;
+	gap: 18px;
+	max-width: 640px;
+}
+
+.gh-form__group {
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+.gh-form__row {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+	gap: 12px;
+}
+
+.gh-form__field {
+	display: grid;
+	gap: 6px;
+}
+
+.gh-form__label {
+	font-weight: 600;
+}
+
+.gh-form__group > .gh-form__label {
+	margin-bottom: 6px;
+}
+
+.gh-form__req {
+	color: currentColor;
+	opacity: 0.6;
+}
+
+.gh-form input,
+.gh-form textarea {
+	box-sizing: border-box;
+	width: 100%;
+	padding: 10px 12px;
+	border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+	border-radius: 6px;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+}
+
+.gh-form textarea {
+	resize: vertical;
+}
+
+.gh-form [aria-invalid="true"] {
+	border-color: #d63638;
+}
+
+.gh-form__error {
+	color: #d63638;
+	font-size: 0.875em;
+}
+
+.gh-form__notice {
+	padding: 12px 14px;
+	border: 1px solid;
+	border-radius: 6px;
+}
+
+.gh-form__notice p {
+	margin: 0;
+}
+
+.gh-form__notice--success {
+	border-color: #00a32a;
+}
+
+.gh-form__notice--error {
+	border-color: #d63638;
+}
+
+.gh-form__foot {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.gh-form__hint {
+	margin: 0;
+	font-size: 0.875em;
+	opacity: 0.7;
+}
+
+.gh-form .screen-reader-text {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+}

@@ -1,79 +1,43 @@
 <?php
 /**
  * Plugin Name: Goede Hosting
- * Description: Basisfunctionaliteit voor WordPress sites gebouwd door Goede Hosting.
- * Version: 1.0.2
+ * Description: Basisfunctionaliteit voor WordPress sites gebouwd door Goede Hosting: bedrijfsgegevens, contactformulier met inzendingen, inhoud importeren en een WhatsApp-knop.
+ * Version: 1.1.0
+ * Requires at least: 6.6
  * Requires PHP: 8.5
  * Update URI: https://github.com/DysprosiumDy/goede-hosting
+ * Text Domain: goede-hosting
+ *
+ * @package GoedeHosting
  */
 
-// Ideas: current year (footer)
+defined( 'ABSPATH' ) || exit;
 
+/** Current plugin version (keep equal to the Version header above). */
+define( 'GOEDE_HOSTING_VERSION', '1.1.0' );
 
-if(!defined('ABSPATH'))
-	exit;
+/** Plugin directory and URL (with trailing slash). */
+define( 'GOEDE_HOSTING_DIR', plugin_dir_path( __FILE__ ) );
+define( 'GOEDE_HOSTING_URL', plugin_dir_url( __FILE__ ) );
 
-// Current plugin version
-define('GOEDE_HOSTING_VERSION', '1.0.5');
+require_once GOEDE_HOSTING_DIR . 'includes/helpers.php';
+require_once GOEDE_HOSTING_DIR . 'includes/updater.php';
+require_once GOEDE_HOSTING_DIR . 'includes/modules.php';
 
-// Load CSS and JavaScript
-add_action('wp_enqueue_scripts', function(){
-	$base = plugin_dir_url( __FILE__ ).'assets/';
-	
-	wp_enqueue_style(
-		'goede-hosting',
-		$base.'css/core.css',
-		array(),
-		GOEDE_HOSTING_VERSION,
-	);
-	
+/**
+ * Front-end base assets (scroll reveal helpers).
+ */
+function goede_hosting_enqueue_assets() {
+	wp_enqueue_style( 'goede-hosting', GOEDE_HOSTING_URL . 'assets/css/core.css', array(), GOEDE_HOSTING_VERSION );
 	wp_enqueue_script(
 		'goede-hosting',
-		$base . 'js/core.js',
+		GOEDE_HOSTING_URL . 'assets/js/core.js',
 		array(),
 		GOEDE_HOSTING_VERSION,
-		true,
+		true
 	);
-} );
+}
+add_action( 'wp_enqueue_scripts', 'goede_hosting_enqueue_assets' );
 
-// New approach for auto-updates
-add_filter('update_plugins_github.com', function ($update, $plugin_data, $plugin_file, $locales) {
-	if (plugin_basename(__FILE__) !== $plugin_file)
-		return $update;
-
-	$version = GOEDE_HOSTING_VERSION;
-	$package = '';
-
-	$response = wp_remote_get(
-		'https://api.github.com/repos/DysprosiumDy/goede-hosting/releases/latest',
-		array(
-			'timeout' => 10,
-			'headers' => array(
-				'Accept'     => 'application/vnd.github+json',
-				'User-Agent' => 'Goede-Hosting-WordPress-Plugin',
-			),
-		)
-	);
-
-	if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
-		$release = json_decode(wp_remote_retrieve_body($response));
-
-		if (!empty($release->tag_name) && !empty($release->assets)) {
-			foreach ($release->assets as $asset) {
-				if ('goede-hosting.zip' === $asset->name) {
-					$package = $asset->browser_download_url;
-					$version = ltrim($release->tag_name, 'v');
-					break;
-				}
-			}
-		}
-	}
-
-	return array(
-		'slug'         => 'goede-hosting',
-		'version'      => $version,
-		'url'          => 'https://github.com/DysprosiumDy/goede-hosting',
-		'package'      => $package,
-		'requires_php' => '8.5',
-	);
-}, 10, 4);
+register_activation_hook( __FILE__, 'goede_hosting_activate' );
+register_deactivation_hook( __FILE__, 'goede_hosting_deactivate' );

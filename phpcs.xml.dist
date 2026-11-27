@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<!--
+	WordPress Coding Standards check for the Goede Hosting plugin.
+	Run from this folder:  phpcs  (report)   phpcbf  (fix spacing/alignment)
+-->
+<ruleset name="Goede Hosting plugin">
+	<description>WordPress Coding Standards + PHP 7.4 compatibility.</description>
+
+	<file>.</file>
+	<exclude-pattern>*/assets/*</exclude-pattern>
+	<exclude-pattern>*/vendor/*</exclude-pattern>
+
+	<arg name="extensions" value="php"/>
+	<arg value="sp"/>
+	<arg name="parallel" value="8"/>
+
+	<rule ref="WordPress"/>
+
+	<rule ref="PHPCompatibilityWP"/>
+	<config name="testVersion" value="7.4-"/>
+	<config name="minimum_wp_version" value="6.6"/>
+
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array">
+				<element value="goede-hosting"/>
+			</property>
+		</properties>
+	</rule>
+
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<properties>
+			<property name="prefixes" type="array">
+				<element value="goede_hosting"/>
+			</property>
+		</properties>
+	</rule>
+</ruleset>

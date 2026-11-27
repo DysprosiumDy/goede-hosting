@@ -1,0 +1,55 @@
+/* Goede Hosting plugin admin screens (importer, inzendingen). Builds on the WordPress admin styles. */
+
+/* Importer: Weergave > Goede Hosting Importeer Inhoud */
+.goede-hosting-importer__table {
+	max-width: 960px;
+	margin-bottom: 1.5em;
+}
+
+.goede-hosting-importer__table td {
+	vertical-align: top;
+}
+
+.goede-hosting-importer__status {
+	display: inline-block;
+	padding: 1px 8px;
+	border-radius: 999px;
+	font-size: 12px;
+	line-height: 1.8;
+	background: #f0f0f1;
+	color: #1d2327;
+}
+
+.goede-hosting-importer__status.is-new {
+	background: #edfaef;
+	color: #00450c;
+}
+
+.goede-hosting-importer__status.is-update {
+	background: #f0f6fc;
+	color: #0a4b78;
+}
+
+.goede-hosting-importer__status.is-manual {
+	background: #fcf9e8;
+	color: #614200;
+}
+
+.goede-hosting-importer__tag {
+	font-size: 12px;
+	color: #646970;
+}
+
+.goede-hosting-importer__list li {
+	margin-bottom: 4px;
+}
+
+/* Inzendingen: detail view */
+.goede-hosting-inzending th {
+	width: 160px;
+}
+
+.goede-hosting-inzending__long {
+	max-width: 70ch;
+	line-height: 1.6;
+}
