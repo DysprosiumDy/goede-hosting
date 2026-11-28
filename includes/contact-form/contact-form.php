@@ -91,39 +91,18 @@ function goede_hosting_contact_fields() {
 			'error'     => __( 'Vul een bericht in.', 'goede-hosting' ),
 		),
 	);
-	$fields = apply_filters( 'goede_hosting_contact_fields', $fields );
+	return goede_hosting_form_normalize_fields( apply_filters( 'goede_hosting_contact_fields', $fields ) );
+}
 
-	$out      = array();
-	$reserved = array( 'action', 'email_verzonden' );
-	foreach ( is_array( $fields ) ? $fields : array() as $key => $field ) {
-		$key = sanitize_key( (string) $key );
-		if ( '' === $key || 0 === strpos( $key, 'gh_' ) || in_array( $key, $reserved, true ) || ! is_array( $field ) ) {
-			continue;
-		}
-		$field = wp_parse_args(
-			$field,
-			array(
-				'label'        => $key,
-				'type'         => 'text',
-				'required'     => false,
-				'maxlength'    => 'textarea' === ( $field['type'] ?? '' ) ? 5000 : 200,
-				'autocomplete' => '',
-				'placeholder'  => '',
-				'summary'      => false,
-				'group'        => '',
-				'group_label'  => '',
-				'error'        => '',
-			)
-		);
-		if ( ! in_array( $field['type'], array( 'text', 'email', 'tel', 'url', 'textarea' ), true ) ) {
-			$field['type'] = 'text';
-		}
-		$field['maxlength'] = max( 1, (int) $field['maxlength'] );
-		$field['required']  = (bool) $field['required'];
-		$field['summary']   = (bool) $field['summary'];
-		$out[ $key ]        = $field;
-	}
-	return $out;
+/**
+ * Fields of a submission: those of the form post with this ID, or (0) the
+ * contact form of the theme.
+ *
+ * @param int $form_id Form post ID, 0 for the theme's contact form.
+ * @return array<string, array>
+ */
+function goede_hosting_form_fields_for( $form_id ) {
+	return $form_id ? goede_hosting_form_fields( $form_id ) : goede_hosting_contact_fields();
 }
 
 /**
@@ -205,6 +184,9 @@ function goede_hosting_contact_retention() {
 	return is_numeric( $months ) ? max( 0, (int) $months ) : 24;
 }
 
+require_once __DIR__ . '/fields.php';
+require_once __DIR__ . '/forms.php';
+require_once __DIR__ . '/uploads.php';
 require_once __DIR__ . '/render.php';
 require_once __DIR__ . '/handler.php';
 require_once __DIR__ . '/submissions.php';

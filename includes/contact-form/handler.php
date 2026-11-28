@@ -105,19 +105,38 @@ function goede_hosting_contact_find_recipient( $blocks, $names ) {
 }
 
 /**
- * Recipient for a submission: the block's own address (pages by administrators
- * only), Inzendingen > Instellingen, the company e-mail, the site admin e-mail.
+ * The form a submission is about (set by the handler; 0 = the theme's contact form).
+ *
+ * @param int|null $set Form ID to remember, or null to read.
+ * @return int
+ */
+function goede_hosting_contact_current_form( $set = null ) {
+	static $form_id = 0;
+	if ( null !== $set ) {
+		$form_id = (int) $set;
+	}
+	return $form_id;
+}
+
+/**
+ * Recipient for a submission: the form's own address (only administrators can
+ * set it), the block's own address (pages by administrators only),
+ * Inzendingen > Instellingen, the company e-mail, the site admin e-mail.
  *
  * @param int $post_id Post that holds the form.
+ * @param int $form_id Form post ID (0 = the theme's contact form).
  * @return string
  */
-function goede_hosting_contact_recipient( $post_id ) {
+function goede_hosting_contact_recipient( $post_id, $form_id = 0 ) {
 	$candidates = array();
-	$post       = $post_id ? get_post( $post_id ) : null;
+	if ( $form_id ) {
+		$candidates[] = goede_hosting_form_settings( $form_id )['recipient'];
+	}
+	$post = $post_id ? get_post( $post_id ) : null;
 	// The block's own recipient only counts on pages written and last edited by an
 	// administrator; otherwise an author could make the site mail any address.
 	$editor = $post ? (int) get_post_meta( $post->ID, '_edit_last', true ) : 0;
-	if ( $post && 'page' === $post->post_type && 'publish' === $post->post_status && has_blocks( $post->post_content )
+	if ( ! $form_id && $post && 'page' === $post->post_type && 'publish' === $post->post_status && has_blocks( $post->post_content )
 		&& user_can( (int) $post->post_author, 'manage_options' ) && ( ! $editor || user_can( $editor, 'manage_options' ) ) ) {
 		$candidates[] = (string) goede_hosting_contact_find_recipient( parse_blocks( $post->post_content ), goede_hosting_contact_form_blocks() );
 	}
@@ -135,7 +154,7 @@ function goede_hosting_contact_recipient( $post_id ) {
 			break;
 		}
 	}
-	return (string) apply_filters( 'goede_hosting_contact_recipient', $recipient, $post_id );
+	return (string) apply_filters( 'goede_hosting_contact_recipient', $recipient, $post_id, $form_id );
 }
 
 /**
@@ -157,19 +176,25 @@ function goede_hosting_contact_return_url( $post_id ) {
 		$url = home_url( '/' );
 	}
 	$url = (string) strtok( $url, '#' );
-	return remove_query_arg( array( 'verzonden', 'gh_fout' ), $url );
+	return remove_query_arg( array( 'verzonden', 'gh_fout', 'gh_form' ), $url );
 }
 
 /**
- * Redirects back to the form.
+ * Redirects back to the form (with ?gh_form=<id> for a form post, so only that
+ * form shows the message).
  *
  * @param int    $post_id Post that holds the form.
  * @param string $arg     Query arg name.
  * @param string $value   Query arg value.
  */
 function goede_hosting_contact_redirect( $post_id, $arg, $value ) {
-	$anchor = (string) apply_filters( 'goede_hosting_contact_anchor', 'contactformulier' );
-	wp_safe_redirect( add_query_arg( $arg, $value, goede_hosting_contact_return_url( $post_id ) ) . ( '' !== $anchor ? '#' . rawurlencode( $anchor ) : '' ) );
+	$form_id = goede_hosting_contact_current_form();
+	$anchor  = $form_id ? 'formulier-' . $form_id : (string) apply_filters( 'goede_hosting_contact_anchor', 'contactformulier' );
+	$args    = array( $arg => $value );
+	if ( $form_id ) {
+		$args['gh_form'] = (string) $form_id;
+	}
+	wp_safe_redirect( add_query_arg( $args, goede_hosting_contact_return_url( $post_id ) ) . ( '' !== $anchor ? '#' . rawurlencode( $anchor ) : '' ) );
 	exit;
 }
 
@@ -187,11 +212,11 @@ function goede_hosting_contact_fail_code( $post_id, $code ) {
 /**
  * Redirects back with the entered values and field errors (kept 15 minutes).
  *
- * @param int                  $post_id Post that holds the form.
- * @param array<string,string> $values  Entered values.
- * @param array<string,string> $errors  Field errors.
- * @param string               $code    Optional key of goede_hosting_contact_messages()
- *                                      for a general error (expired session …).
+ * @param int    $post_id Post that holds the form.
+ * @param array  $values  Entered values (strings, arrays for checkboxes).
+ * @param array  $errors  Field errors.
+ * @param string $code    Optional key of goede_hosting_contact_messages()
+ *                        for a general error (expired session …).
  */
 function goede_hosting_contact_fail( $post_id, $values, $errors, $code = '' ) {
 	$messages = goede_hosting_contact_messages();
@@ -209,22 +234,23 @@ function goede_hosting_contact_fail( $post_id, $values, $errors, $code = '' ) {
 }
 
 /**
- * Handles a submission.
+ * Handles a submission of the theme's contact form or of a form post.
  */
 function goede_hosting_contact_handle() {
-	$fields = goede_hosting_contact_fields();
-
 	// phpcs:disable WordPress.Security.NonceVerification.Missing -- the nonce is verified below, after reading the values to keep on error.
 	$post_id = isset( $_POST['gh_pagina'] ) ? absint( wp_unslash( $_POST['gh_pagina'] ) ) : 0;
+	$form_id = isset( $_POST['gh_formulier'] ) ? absint( wp_unslash( $_POST['gh_formulier'] ) ) : 0;
+	goede_hosting_contact_current_form( $form_id );
+	if ( $form_id && ! goede_hosting_form_post( $form_id ) ) {
+		// Unknown, draft or deleted form: nothing to validate against.
+		goede_hosting_contact_fail_code( $post_id, 'mislukt' );
+	}
 
+	// The fields always come from the saved form, never from the request.
+	$fields = goede_hosting_form_fields_for( $form_id );
 	$values = array();
 	foreach ( $fields as $name => $field ) {
-		$raw = '';
-		if ( isset( $_POST[ $name ] ) && is_string( $_POST[ $name ] ) ) {
-			$raw = 'textarea' === $field['type'] ? sanitize_textarea_field( wp_unslash( $_POST[ $name ] ) ) : sanitize_text_field( wp_unslash( $_POST[ $name ] ) );
-		}
-		$raw             = trim( $raw );
-		$values[ $name ] = function_exists( 'mb_substr' ) ? mb_substr( $raw, 0, $field['maxlength'] ) : substr( $raw, 0, $field['maxlength'] );
+		$values[ $name ] = goede_hosting_form_read_value( $name, $field );
 	}
 
 	$honeypot = isset( $_POST['gh_website'] ) && is_string( $_POST['gh_website'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['gh_website'] ) ) ) : '';
@@ -257,22 +283,24 @@ function goede_hosting_contact_handle() {
 		goede_hosting_contact_fail( $post_id, $values, array(), 'snel' );
 	}
 
-	$errors = array();
+	// Conditional logic, evaluated here again: hidden fields are not required and
+	// their answers are dropped, whatever the browser sent.
+	$visible = goede_hosting_form_visibility( $fields, $values );
+	$errors  = array();
 	foreach ( $fields as $name => $field ) {
-		if ( '' === $values[ $name ] ) {
-			if ( $field['required'] ) {
-				/* translators: %s: field label. */
-				$errors[ $name ] = '' !== $field['error'] ? $field['error'] : sprintf( __( 'Vul je %s in.', 'goede-hosting' ), strtolower( $field['label'] ) );
-			}
+		if ( empty( $visible[ $name ] ) ) {
+			$values[ $name ] = 'checkboxes' === $field['type'] ? array() : '';
 			continue;
 		}
-		if ( 'email' === $field['type'] && ! is_email( $values[ $name ] ) ) {
-			$errors[ $name ] = __( 'Vul een geldig e-mailadres in.', 'goede-hosting' );
-		} elseif ( 'url' === $field['type'] && ! wp_http_validate_url( $values[ $name ] ) ) {
-			$errors[ $name ] = __( 'Vul een geldig webadres in (met https://).', 'goede-hosting' );
+		$error = 'file' === $field['type'] ? '' : goede_hosting_form_validate_value( $field, $values[ $name ] );
+		if ( '' !== $error ) {
+			$errors[ $name ] = $error;
 		}
 	}
-	$errors = (array) apply_filters( 'goede_hosting_contact_errors', $errors, $values, $fields );
+	// Files: checked now, stored only when the whole submission is valid.
+	$uploads = goede_hosting_form_check_uploads( $fields, $visible );
+	$errors  = array_merge( $uploads['errors'], $errors );
+	$errors  = (array) apply_filters( 'goede_hosting_contact_errors', $errors, $values, $fields );
 	if ( $errors ) {
 		goede_hosting_contact_fail( $post_id, $values, $errors );
 	}
@@ -282,20 +310,35 @@ function goede_hosting_contact_handle() {
 	// can neither fill the mailbox nor block the form for real visitors.
 	$over_limit = ! goede_hosting_contact_count_attempt( 'goedehosting_contact_rl_site', GOEDE_HOSTING_CONTACT_SITE_LIMIT );
 
-	$email_key = goede_hosting_contact_email_key( $fields );
-	$email     = '' !== $email_key ? strtolower( $values[ $email_key ] ) : '';
-	$recipient = goede_hosting_contact_recipient( $post_id );
+	// Stored and mailed as text; only visible fields.
+	$texts = array();
+	foreach ( $fields as $name => $field ) {
+		if ( ! empty( $visible[ $name ] ) ) {
+			$texts[ $name ] = goede_hosting_form_value_text( $field, $values[ $name ] );
+		}
+	}
+	$files = goede_hosting_form_store_uploads( $uploads['pending'] );
+	foreach ( $files as $name => $file ) {
+		$texts[ $name ] = $file['name'];
+	}
+	$shown = array_intersect_key( $fields, $texts );
+
+	$email_key = goede_hosting_contact_email_key( $shown );
+	$email     = '' !== $email_key ? strtolower( $texts[ $email_key ] ) : '';
+	$recipient = goede_hosting_contact_recipient( $post_id, $form_id );
 	$source    = goede_hosting_contact_return_url( $post_id );
 
 	$meta = array(
-		'_gh_velden'         => wp_list_pluck( $fields, 'label' ),
+		'_gh_velden'         => wp_list_pluck( $shown, 'label' ),
 		'_gh_email'          => $email,
 		'_gh_pagina'         => esc_url_raw( $source ),
 		'_gh_ontvanger'      => $recipient,
 		'_gh_mail_verzonden' => '0',
 		'_gh_limiet'         => $over_limit ? '1' : '0',
+		'_gh_formulier'      => (string) $form_id,
+		'_gh_bestanden'      => $files,
 	);
-	foreach ( $values as $name => $value ) {
+	foreach ( $texts as $name => $value ) {
 		$meta[ '_gh_' . $name ] = $email_key === $name ? $email : $value;
 	}
 
@@ -303,7 +346,7 @@ function goede_hosting_contact_handle() {
 		array(
 			'post_type'    => GOEDE_HOSTING_INZENDING,
 			'post_status'  => 'private',
-			'post_title'   => goede_hosting_contact_summary( $values, $fields ),
+			'post_title'   => goede_hosting_contact_summary( $texts, $shown ),
 			'post_content' => '',
 			'post_author'  => 0,
 			'meta_input'   => $meta,
@@ -311,8 +354,11 @@ function goede_hosting_contact_handle() {
 		true
 	);
 	$entry_id = is_wp_error( $entry_id ) ? 0 : (int) $entry_id;
+	if ( ! $entry_id ) {
+		goede_hosting_form_delete_files( $files );
+	}
 
-	$sent = $over_limit ? false : goede_hosting_contact_send_mail( $values, $fields, $recipient, $entry_id, $source );
+	$sent = $over_limit ? false : goede_hosting_contact_send_mail( $texts, $shown, $recipient, $entry_id, $source );
 	if ( $entry_id ) {
 		update_post_meta( $entry_id, '_gh_mail_verzonden', $sent ? '1' : '0' );
 	}
@@ -321,7 +367,7 @@ function goede_hosting_contact_handle() {
 		goede_hosting_contact_fail_code( $post_id, 'mislukt' );
 	}
 
-	do_action( 'goede_hosting_contact_submitted', $entry_id, $values, $sent );
+	do_action( 'goede_hosting_contact_submitted', $entry_id, $texts, $sent, $form_id );
 	goede_hosting_contact_redirect( $post_id, 'verzonden', '1' );
 }
 add_action( 'admin_post_goedehosting_contact', 'goede_hosting_contact_handle' );
@@ -347,6 +393,11 @@ function goede_hosting_contact_send_mail( $values, $fields, $recipient, $entry_i
 
 	/* translators: %s: short description of the submission (name and summary fields). */
 	$subject = sprintf( __( 'Contactformulier: %s', 'goede-hosting' ), $plain( goede_hosting_contact_summary( $values, $fields ) ) );
+	$form    = goede_hosting_form_post( goede_hosting_contact_current_form() );
+	if ( $form ) {
+		// Form posts: the form's title instead of "Contactformulier" (one line, header-safe).
+		$subject = trim( (string) preg_replace( '/[\r\n]+/', ' ', $plain( get_the_title( $form ) ) ) ) . ': ' . $plain( goede_hosting_contact_summary( $values, $fields ) );
+	}
 
 	$lines   = array( __( 'Er is een nieuw bericht verstuurd via het contactformulier.', 'goede-hosting' ), '' );
 	$long    = array();

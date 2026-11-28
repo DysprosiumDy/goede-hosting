@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.0 (2026-11-28)
+- **Modules in the admin:** menu **Goede Hosting > Modules** to switch modules on and off (administrators), with descriptions, settings links and dependencies (switching a module on brings along what it needs; switching one off takes the modules that need it along). Code can still switch modules off for good (filter `goede_hosting_modules`). Other plugins add modules with `goede_hosting_register_module()` on `goede_hosting_register_modules`.
+- **Form builder** (module `contact-form`, now "Formulieren"): any number of forms in **Goede Hosting > Formulieren**, built in the block editor with the block "Formulierveld" and placed with the block "Goede Hosting Formulier" or `[goedehosting_formulier id="…"]`.
+  - Field types: text, textarea, e-mail, phone, URL, number, dropdown, radio buttons, checkboxes, date, file upload, consent, hidden field; required, placeholder, help text, options, default value, half width, min/max.
+  - Conditional logic: show or hide fields based on other answers (also enforced on the server: hidden fields are not required and their answers are dropped).
+  - Multi-step forms with the block "Volgende stap" (progress bar, per-step check).
+  - Form settings: button text, confirmation, recipient (administrators only).
+  - File uploads: per-field types within a safe list, real content check, stored only for valid submissions under random names in a protected folder, downloadable by administrators only, deleted with the submission.
+  - Submissions per form: column and filter "Formulier" in Inzendingen, files linked in the submission.
+- The theme's contact form works as before (same fields filter, template and submissions).
+- Hidden fields always use the value set in the builder (a visitor can't change them).
+
 ## 1.1.1 (2026-11-28)
 - Contact form:
   - The site-wide limit (30 per hour) no longer blocks the form: above it messages are stored but not mailed, and the visitor sees the normal confirmation. The limit per IP address (5 per hour) now counts every attempt.

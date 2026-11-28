@@ -113,6 +113,7 @@ function goede_hosting_inzending_columns( $columns ) {
 		'cb'       => isset( $columns['cb'] ) ? $columns['cb'] : '<input type="checkbox">',
 		'gh_naam'  => __( 'Inzending', 'goede-hosting' ),
 		'gh_email' => __( 'E-mail', 'goede-hosting' ),
+		'gh_form'  => __( 'Formulier', 'goede-hosting' ),
 		'gh_mail'  => __( 'Mail verzonden', 'goede-hosting' ),
 		'gh_datum' => __( 'Datum', 'goede-hosting' ),
 	);
@@ -141,6 +142,10 @@ function goede_hosting_inzending_column( $column, $post_id ) {
 			if ( '' !== $email ) {
 				printf( '<a href="%1$s">%2$s</a>', esc_url( 'mailto:' . $email, array( 'mailto' ) ), esc_html( $email ) );
 			}
+			break;
+		case 'gh_form':
+			$form_id = (int) goede_hosting_inzending_meta( $post_id, 'formulier' );
+			echo esc_html( $form_id ? get_the_title( $form_id ) : __( 'Contactformulier', 'goede-hosting' ) );
 			break;
 		case 'gh_mail':
 			echo '1' === goede_hosting_inzending_meta( $post_id, 'mail_verzonden' ) ? esc_html__( 'Ja', 'goede-hosting' ) : '<strong>' . esc_html__( 'Nee', 'goede-hosting' ) . '</strong>';
@@ -296,12 +301,23 @@ function goede_hosting_inzending_detail_box( $post ) {
 	$mailed = '1' === goede_hosting_inzending_meta( $post->ID, 'mail_verzonden' );
 	$to     = goede_hosting_inzending_meta( $post->ID, 'ontvanger' );
 
-	$rows = array(
+	$files   = goede_hosting_form_entry_files( $post->ID );
+	$form_id = (int) goede_hosting_inzending_meta( $post->ID, 'formulier' );
+	$rows    = array(
 		__( 'Datum', 'goede-hosting' ) => esc_html( (string) get_the_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $post ) ),
 	);
+	if ( $form_id ) {
+		$rows[ __( 'Formulier', 'goede-hosting' ) ] = esc_html( get_the_title( $form_id ) );
+	}
 	foreach ( goede_hosting_inzending_fields( $post->ID ) as $key => $label ) {
 		$value = goede_hosting_inzending_meta( $post->ID, $key );
-		if ( is_email( $value ) ) {
+		if ( isset( $files[ $key ] ) && is_array( $files[ $key ] ) ) {
+			// Uploaded file: a download link for administrators (nonce + capability).
+			$file = $files[ $key ];
+			$html = '' !== goede_hosting_form_file_path( $file['file'] ?? '' )
+				? '<a href="' . esc_url( goede_hosting_form_download_url( $post->ID, $key ) ) . '">' . esc_html( (string) $file['name'] ) . '</a> <span class="description">(' . esc_html( size_format( (int) ( $file['size'] ?? 0 ) ) ) . ')</span>'
+				: esc_html( (string) $file['name'] ) . ' <span class="description">(' . esc_html__( 'bestand niet meer aanwezig', 'goede-hosting' ) . ')</span>';
+		} elseif ( is_email( $value ) ) {
 			$html = '<a href="' . esc_url( 'mailto:' . $value, array( 'mailto' ) ) . '">' . esc_html( $value ) . '</a>';
 		} elseif ( false !== strpos( $value, "\n" ) || strlen( $value ) > 120 ) {
 			$html = '<div class="goede-hosting-inzending__long">' . nl2br( esc_html( $value ) ) . '</div>';
@@ -512,3 +528,75 @@ function goede_hosting_inzending_cleanup() {
 	}
 }
 add_action( GOEDE_HOSTING_INZENDING_CRON, 'goede_hosting_inzending_cleanup' );
+
+/**
+ * Filter "Alle formulieren" above the list of submissions.
+ *
+ * @param string $post_type Post type of the list.
+ */
+function goede_hosting_inzending_form_filter( $post_type ) {
+	if ( GOEDE_HOSTING_INZENDING !== $post_type ) {
+		return;
+	}
+	$forms = get_posts(
+		array(
+			'post_type'      => GOEDE_HOSTING_FORMULIER,
+			'post_status'    => array( 'publish', 'draft', 'private' ),
+			'posts_per_page' => 100,
+			'orderby'        => 'title',
+			'order'          => 'ASC',
+		)
+	);
+	// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- list filter.
+	$current = isset( $_GET['gh_formulier'] ) ? sanitize_key( wp_unslash( $_GET['gh_formulier'] ) ) : '';
+	echo '<label class="screen-reader-text" for="gh-formulier-filter">' . esc_html__( 'Filter op formulier', 'goede-hosting' ) . '</label>';
+	echo '<select name="gh_formulier" id="gh-formulier-filter"><option value="">' . esc_html__( 'Alle formulieren', 'goede-hosting' ) . '</option>';
+	echo '<option value="0"' . selected( $current, '0', false ) . '>' . esc_html__( 'Contactformulier', 'goede-hosting' ) . '</option>';
+	foreach ( $forms as $form ) {
+		echo '<option value="' . esc_attr( (string) $form->ID ) . '"' . selected( $current, (string) $form->ID, false ) . '>' . esc_html( get_the_title( $form ) ) . '</option>';
+	}
+	echo '</select>';
+}
+add_action( 'restrict_manage_posts', 'goede_hosting_inzending_form_filter' );
+
+/**
+ * Applies the form filter.
+ *
+ * @param WP_Query $query Query.
+ */
+function goede_hosting_inzending_form_query( $query ) {
+	// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- list filter.
+	if ( ! is_admin() || ! $query->is_main_query() || GOEDE_HOSTING_INZENDING !== $query->get( 'post_type' ) || ! isset( $_GET['gh_formulier'] ) || '' === $_GET['gh_formulier'] ) {
+		return;
+	}
+	// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- list filter.
+	$form_id = absint( wp_unslash( $_GET['gh_formulier'] ) );
+	if ( $form_id ) {
+		$query->set(
+			'meta_query',
+			array(
+				array(
+					'key'   => '_gh_formulier',
+					'value' => (string) $form_id,
+				),
+			)
+		);
+		return;
+	}
+	// The theme's contact form: no form ID stored (older submissions) or 0.
+	$query->set(
+		'meta_query',
+		array(
+			'relation' => 'OR',
+			array(
+				'key'     => '_gh_formulier',
+				'compare' => 'NOT EXISTS',
+			),
+			array(
+				'key'   => '_gh_formulier',
+				'value' => '0',
+			),
+		)
+	);
+}
+add_action( 'pre_get_posts', 'goede_hosting_inzending_form_query' );

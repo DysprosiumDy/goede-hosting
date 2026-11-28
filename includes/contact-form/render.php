@@ -18,11 +18,24 @@ function goede_hosting_contact_stamp_hash( $stamp ) {
 }
 
 /**
- * Error/value state from the redirect after a failed submission.
+ * Which form a redirect after a submission is about (?gh_form=<id>; 0 or
+ * missing for the theme's contact form).
  *
- * @return array{values:array<string,string>, errors:array<string,string>, general:string}
+ * @return int
  */
-function goede_hosting_contact_state() {
+function goede_hosting_contact_redirect_form() {
+	// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display only.
+	return isset( $_GET['gh_form'] ) ? absint( wp_unslash( $_GET['gh_form'] ) ) : 0;
+}
+
+/**
+ * Error/value state from the redirect after a failed submission, for one form
+ * (other forms on the same page show nothing).
+ *
+ * @param int $form_id Form post ID, 0 for the theme's contact form.
+ * @return array{values:array<string,string|array>, errors:array<string,string>, general:string}
+ */
+function goede_hosting_contact_state( $form_id = 0 ) {
 	$state = array(
 		'values'  => array(),
 		'errors'  => array(),
@@ -30,7 +43,7 @@ function goede_hosting_contact_state() {
 	);
 	// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only lookup of a random token.
 	$token = isset( $_GET['gh_fout'] ) ? sanitize_key( wp_unslash( $_GET['gh_fout'] ) ) : '';
-	if ( '' === $token ) {
+	if ( '' === $token || goede_hosting_contact_redirect_form() !== (int) $form_id ) {
 		return $state;
 	}
 	$messages = goede_hosting_contact_messages();
@@ -43,9 +56,17 @@ function goede_hosting_contact_state() {
 		$state['general'] = __( 'Er ging iets mis bij het versturen. Probeer het opnieuw.', 'goede-hosting' );
 		return $state;
 	}
-	foreach ( array( 'values', 'errors' ) as $part ) {
-		if ( isset( $stored[ $part ] ) && is_array( $stored[ $part ] ) ) {
-			$state[ $part ] = array_map( 'strval', array_filter( $stored[ $part ], 'is_scalar' ) );
+	if ( isset( $stored['errors'] ) && is_array( $stored['errors'] ) ) {
+		$state['errors'] = array_map( 'strval', array_filter( $stored['errors'], 'is_scalar' ) );
+	}
+	if ( isset( $stored['values'] ) && is_array( $stored['values'] ) ) {
+		foreach ( $stored['values'] as $key => $value ) {
+			if ( is_scalar( $value ) ) {
+				$state['values'][ $key ] = (string) $value;
+			} elseif ( is_array( $value ) ) {
+				// Chosen checkboxes.
+				$state['values'][ $key ] = array_map( 'strval', array_filter( $value, 'is_scalar' ) );
+			}
 		}
 	}
 	$state['general'] = isset( $stored['general'] ) && is_string( $stored['general'] ) ? $stored['general'] : '';
@@ -111,21 +132,23 @@ function goede_hosting_contact_error( $field, $css_class = 'gh-form__error' ) {
 /**
  * Data for the form template.
  *
- * @param array $args button_text, success_text, id.
+ * @param array $args button_text, success_text, id, form_id (0 = the theme's contact form).
  * @return array
  */
 function goede_hosting_contact_form_data( $args ) {
-	$args  = wp_parse_args(
+	$args    = wp_parse_args(
 		$args,
 		array(
 			'button_text'  => '',
 			'success_text' => '',
 			'id'           => 'contactformulier',
+			'form_id'      => 0,
 		)
 	);
-	$state = goede_hosting_contact_state();
+	$form_id = (int) $args['form_id'];
+	$state   = goede_hosting_contact_state( $form_id );
 	// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display flag only.
-	$sent    = isset( $_GET['verzonden'] ) && '1' === sanitize_key( wp_unslash( $_GET['verzonden'] ) ) && ! $state['errors'] && '' === $state['general'];
+	$sent    = isset( $_GET['verzonden'] ) && '1' === sanitize_key( wp_unslash( $_GET['verzonden'] ) ) && goede_hosting_contact_redirect_form() === $form_id && ! $state['errors'] && '' === $state['general'];
 	$post_id = is_singular() ? get_queried_object_id() : (int) get_the_ID();
 	$stamp   = (string) time();
 
@@ -144,11 +167,14 @@ function goede_hosting_contact_form_data( $args ) {
 
 	$fields = array();
 	$groups = array();
-	foreach ( goede_hosting_contact_fields() as $key => $field ) {
+	$prefix = $form_id ? 'gh-' . $form_id . '-' : 'gh-';
+	foreach ( goede_hosting_form_fields_for( $form_id ) as $key => $field ) {
+		$default = 'checkboxes' === $field['type'] ? array_values( array_intersect( $field['options'], array_map( 'trim', explode( ',', (string) $field['default'] ) ) ) ) : (string) $field['default'];
+
 		$field['key']      = $key;
-		$field['id']       = 'gh-' . $key;
-		$field['error_id'] = 'gh-' . $key . '-fout';
-		$field['value']    = isset( $state['values'][ $key ] ) ? $state['values'][ $key ] : '';
+		$field['id']       = $prefix . $key;
+		$field['error_id'] = $prefix . $key . '-fout';
+		$field['value']    = isset( $state['values'][ $key ] ) ? $state['values'][ $key ] : $default;
 		$field['error']    = isset( $state['errors'][ $key ] ) ? $state['errors'][ $key ] : '';
 		$fields[ $key ]    = $field;
 
@@ -175,6 +201,9 @@ function goede_hosting_contact_form_data( $args ) {
 	?>
 	<input type="hidden" name="action" value="goedehosting_contact">
 	<input type="hidden" name="gh_pagina" value="<?php echo esc_attr( (string) $post_id ); ?>">
+	<?php if ( $form_id ) : ?>
+		<input type="hidden" name="gh_formulier" value="<?php echo esc_attr( (string) $form_id ); ?>">
+	<?php endif; ?>
 	<input type="hidden" name="gh_tijd" value="<?php echo esc_attr( $stamp . '.' . goede_hosting_contact_stamp_hash( $stamp ) ); ?>">
 	<?php wp_nonce_field( 'goedehosting_contact', 'gh_nonce' ); ?>
 	<div aria-hidden="true" style="position:absolute;left:-10000px;top:auto;width:1px;height:1px;overflow:hidden">
@@ -198,6 +227,7 @@ function goede_hosting_contact_form_data( $args ) {
 		'fields'      => $fields,
 		'rows'        => array_values( $groups ),
 		'privacy_url' => goede_hosting_contact_privacy_url(),
+		'form_id'     => $form_id,
 	);
 }
 

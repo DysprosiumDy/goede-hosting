@@ -7,7 +7,18 @@ Requires WordPress 6.6+ and PHP 8.5+. Updates itself from the latest GitHub Rele
 six hours; *Dashboard > Updates > Opnieuw controleren* checks right away).
 
 ## Modules
-Every module can be switched off per site (theme `functions.php` or a must-use plugin):
+Every feature is a module. Switch them on or off in **Goede Hosting > Modules** (administrators). A module that needs
+another one brings it along when switched on, and is switched off with it. Data and settings stay when a module is off.
+
+| Module | What | Admin |
+| --- | --- | --- |
+| `company` | Company details, shortcodes, block bindings | Instellingen > Bedrijfsgegevens |
+| `contact-form` | Forms built in the editor, the theme's contact form, stored submissions, privacy tools, daily cleanup | Goede Hosting > Formulieren, Inzendingen (+ Instellingen) |
+| `importer` | Imports a content package (pages, media, company details) | Weergave > Goede Hosting Importeer Inhoud |
+| `whatsapp-button` | Floating WhatsApp button (needs `company`) | checkbox in Bedrijfsgegevens |
+
+Code has the last word: a theme or must-use plugin can switch modules off for good (the Modules page then shows them
+as "uitgezet in code"):
 
 ```php
 add_filter( 'goede_hosting_modules', function ( $modules ) {
@@ -15,15 +26,29 @@ add_filter( 'goede_hosting_modules', function ( $modules ) {
 } );
 ```
 
-| Module | What | Admin |
-| --- | --- | --- |
-| `company` | Company details, shortcodes, block bindings | Instellingen > Bedrijfsgegevens |
-| `contact-form` | Contact form, stored submissions, privacy tools, daily cleanup | Inzendingen (+ Instellingen) |
-| `importer` | Imports a content package (pages, media, company details) | Weergave > Goede Hosting Importeer Inhoud |
-| `whatsapp-button` | Floating WhatsApp button (needs `company`) | checkbox in Bedrijfsgegevens |
-
 A theme that still contains one of these features itself (older Goede Hosting themes) is detected: that module stays
 off and the admin sees a notice, so updating the plugin before the theme is safe.
+
+### Adding a module (also from another plugin)
+
+```php
+add_action( 'goede_hosting_register_modules', function () {
+	goede_hosting_register_module( 'mijn-module', array(
+		'label'       => 'Mijn module',
+		'description' => 'Wat de module doet.',
+		'file'        => __DIR__ . '/mijn-module.php', // absolute, or relative to this plugin's includes/
+		'requires'    => array( 'company' ),         // other modules it needs
+		'settings'    => 'admin.php?page=mijn-module', // link on the Modules page
+		'admin_only'  => false,                      // load only in the admin (and cron)
+		'default'     => true,                       // on for sites that never saved the Modules page
+	) );
+} );
+```
+
+The module's file is loaded on `after_setup_theme` (priority 1) when the module is on; then the action
+`goede_hosting_module_loaded` fires with its name. `goede_hosting_module_active( 'mijn-module' )` tells whether it runs.
+Put its admin page under the **Goede Hosting** menu (`add_submenu_page( 'goede-hosting', … )`). On plugin deactivation
+the action `goede_hosting_deactivate` fires (clear your cron jobs there).
 
 ## Company details (`company`)
 All empty until filled in (or set by a content package). Fields: `email`, `phone`, `phone_e164`, `whatsapp`, `address1`,
@@ -35,6 +60,34 @@ All empty until filled in (or set by a content package). Fields: `email`, `phone
   `[goedehosting_adres]` (`scheiding="<br>"` for two lines), `[goedehosting_jaar]`; `link="nee"` for plain text.
 - Block bindings source `goedehosting/company` (keys `email`, `email_link`, `telefoon`, `telefoon_link`, `whatsapp_link`,
   `kvk`, plus extra fields), e.g. a Button with `{"source":"goedehosting/company","args":{"key":"whatsapp_link","tekst":"Hallo"}}`.
+
+## Forms (`contact-form`)
+**Goede Hosting > Formulieren** (editors and administrators): every form is built in the block editor.
+
+- Block **Formulierveld** per field. Types: text, textarea, e-mail, phone, URL, number (min/max), dropdown, radio
+  buttons, checkboxes, date (min/max), file upload, consent checkbox, hidden field. Per field: label, technical name
+  (used in conditions and submissions), required, placeholder, help text, options (one per line), default value, half
+  width, "show in the submission title".
+- **Conditions** (sidebar "Voorwaarden"): show or hide a field when other answers match (`is`, `is niet`, `bevat`,
+  `is leeg`, `is ingevuld`, `groter`, `kleiner`; all or any of the rules). Evaluated in the browser and again on the
+  server: a hidden field is never required and its answer is dropped.
+- Block **Volgende stap** splits a form into steps (progress bar, each step is checked before the next; steps whose
+  fields are all hidden are skipped). Without JavaScript all steps show at once.
+- Headings, paragraphs, lists and separators can sit between fields.
+- Sidebar panel **Formulier**: button text, confirmation text, and (administrators only) the recipient.
+- Place a form with the block **Goede Hosting Formulier** or `[goedehosting_formulier id="123"]`. Only published
+  forms are shown and accepted.
+- Markup: `templates/form.php`, override in `<theme>/goede-hosting/form.php`. Styling: `assets/css/forms.css` (follows
+  the theme's colours; custom properties `--gh-form-accent`, `--gh-form-radius` …), off with
+  `add_filter( 'goede_hosting_form_css', '__return_false' )`.
+- File uploads: allowed types per field, always within a safe list (filter `goede_hosting_form_upload_extensions`;
+  never SVG, HTML, JS, PHP …); size per field up to the server's upload limit. Extension and real content are checked
+  before anything is stored; files are stored only when the whole submission is valid, under random names in
+  `uploads/.ht-goedehosting-formulieren` (denied by `.htaccess` and the usual nginx rules), downloadable only by
+  administrators from the submission (nonce, always as attachment), and deleted with the submission.
+- Submissions land in **Inzendingen** (column and filter "Formulier"); the same spam protection, limits, privacy
+  export/erase and retention apply as for the contact form below. More field types: filter
+  `goede_hosting_form_field_types`.
 
 ## Contact form (`contact-form`)
 Block **Goede Hosting Contactformulier** (`goede-hosting/contact-form`: button text, confirmation, optional recipient) or
