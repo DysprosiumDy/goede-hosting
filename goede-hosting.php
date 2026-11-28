@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Goede Hosting
  * Description: Basisfunctionaliteit voor WordPress sites gebouwd door Goede Hosting: bedrijfsgegevens, contactformulier met inzendingen, inhoud importeren en een WhatsApp-knop.
- * Version: 1.1.0
+ * Version: 1.1.1
  * Requires at least: 6.6
  * Requires PHP: 8.5
  * Update URI: https://github.com/DysprosiumDy/goede-hosting
@@ -14,7 +14,7 @@
 defined( 'ABSPATH' ) || exit;
 
 /** Current plugin version (keep equal to the Version header above). */
-define( 'GOEDE_HOSTING_VERSION', '1.1.0' );
+define( 'GOEDE_HOSTING_VERSION', '1.1.1' );
 
 /** Plugin directory and URL (with trailing slash). */
 define( 'GOEDE_HOSTING_DIR', plugin_dir_path( __FILE__ ) );

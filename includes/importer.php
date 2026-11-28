@@ -154,11 +154,16 @@ function goede_hosting_importer_forget() {
 
 /**
  * Possible base dirs (no trailing slash): the system temp dir first (outside the
- * web root, so the raw package files are never reachable by URL), then uploads.
+ * web root, so the raw package files are never reachable by URL), then
+ * uploads/.ht-goedehosting-import. The ".ht" prefix matters on nginx, which
+ * ignores .htaccess: the usual WordPress nginx config denies every path with
+ * "/.ht" in it, and many deny all dot folders.
  *
+ * @param bool $legacy Also the uploads root itself, where 1.1.0 put its temp dirs
+ *                     (only for cleaning up, never for new dirs).
  * @return string[]
  */
-function goede_hosting_importer_bases() {
+function goede_hosting_importer_bases( $legacy = false ) {
 	$bases = array();
 	$temp  = get_temp_dir();
 	if ( $temp ) {
@@ -166,7 +171,11 @@ function goede_hosting_importer_bases() {
 	}
 	$uploads = wp_upload_dir( null, false );
 	if ( empty( $uploads['error'] ) && ! empty( $uploads['basedir'] ) ) {
-		$bases[] = untrailingslashit( wp_normalize_path( $uploads['basedir'] ) );
+		$root    = untrailingslashit( wp_normalize_path( $uploads['basedir'] ) );
+		$bases[] = $root . '/.ht-goedehosting-import';
+		if ( $legacy ) {
+			$bases[] = $root;
+		}
 	}
 	return $bases;
 }
@@ -239,7 +248,7 @@ function goede_hosting_importer_rmdir( $dir ) {
 		return;
 	}
 	$dir = wp_normalize_path( $dir );
-	if ( ! in_array( dirname( $dir ), goede_hosting_importer_bases(), true ) || ! preg_match( '/^goedehosting-import-[a-z0-9]{24}$/', basename( $dir ) ) || ! is_dir( $dir ) || is_link( $dir ) ) {
+	if ( ! in_array( dirname( $dir ), goede_hosting_importer_bases( true ), true ) || ! preg_match( '/^goedehosting-import-[a-z0-9]{24}$/', basename( $dir ) ) || ! is_dir( $dir ) || is_link( $dir ) ) {
 		return;
 	}
 	$items = new RecursiveIteratorIterator(
@@ -260,7 +269,7 @@ function goede_hosting_importer_rmdir( $dir ) {
  * Deletes temp dirs older than an hour (their transient has expired).
  */
 function goede_hosting_importer_cleanup_stale() {
-	foreach ( goede_hosting_importer_bases() as $base ) {
+	foreach ( goede_hosting_importer_bases( true ) as $base ) {
 		$dirs = is_dir( $base ) ? glob( $base . '/goedehosting-import-*', GLOB_ONLYDIR ) : false;
 		if ( ! is_array( $dirs ) ) {
 			continue;
@@ -429,6 +438,11 @@ function goede_hosting_importer_sanitize_svg( $svg ) {
 		return false;
 	}
 	$svg = preg_replace( '/^\xEF\xBB\xBF/', '', $svg );
+	// Only plain UTF-8 (or ASCII): other encodings (UTF-16 …) would slip past the
+	// byte checks below.
+	if ( ! preg_match( '//u', $svg ) || preg_match( '/^\s*<\?xml[^>]*encoding\s*=\s*["\'](?!utf-?8["\'])/i', $svg ) ) {
+		return false;
+	}
 	if ( preg_match( '/<!DOCTYPE|<!ENTITY/i', $svg ) ) {
 		return false;
 	}
@@ -437,7 +451,8 @@ function goede_hosting_importer_sanitize_svg( $svg ) {
 	$loaded   = $dom->loadXML( $svg, LIBXML_NONET );
 	libxml_clear_errors();
 	libxml_use_internal_errors( $previous );
-	if ( ! $loaded || ! $dom->documentElement || 'svg' !== strtolower( $dom->documentElement->localName ) ) {
+	// Checked again on the parsed document, whatever the bytes looked like.
+	if ( ! $loaded || null !== $dom->doctype || ! $dom->documentElement || 'svg' !== strtolower( $dom->documentElement->localName ) ) {
 		return false;
 	}
 
@@ -462,13 +477,15 @@ function goede_hosting_importer_sanitize_svg( $svg ) {
 			$attributes[] = $attribute;
 		}
 		foreach ( $attributes as $attribute ) {
-			$attr  = strtolower( $attribute->nodeName );
+			// localName: "href" whatever prefix the attribute uses (xlink:, or any
+			// prefix bound to the XLink namespace).
+			$attr  = strtolower( (string) $attribute->localName );
 			$value = strtolower( (string) preg_replace( '/[\s\x00-\x1F]+/', '', html_entity_decode( $attribute->value, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) ) );
 			$drop  = 0 === strpos( $attr, 'on' )
 				|| false !== strpos( $value, 'javascript:' )
 				|| false !== strpos( $value, 'vbscript:' )
 				|| ( 'style' === $attr && preg_match( '/expression\(|@import|behavior:/', $value ) );
-			if ( ! $drop && in_array( $attr, array( 'href', 'xlink:href', 'src' ), true ) && 0 === strpos( $value, 'data:' ) ) {
+			if ( ! $drop && in_array( $attr, array( 'href', 'src' ), true ) && 0 === strpos( $value, 'data:' ) ) {
 				$drop = ! preg_match( '#^data:image/(png|jpe?g|gif|webp);#', $value );
 			}
 			if ( $drop ) {

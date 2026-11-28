@@ -183,14 +183,50 @@ function goede_hosting_contact_form_data( $args ) {
 	<?php
 	$hidden = (string) ob_get_clean();
 
+	$id = sanitize_html_class( $args['id'] );
+	if ( $notice ) {
+		$notice['id'] = $id . '-melding';
+		goede_hosting_contact_focus_notice( $notice['id'] );
+	}
+
 	return array(
-		'id'          => sanitize_html_class( $args['id'] ),
+		'id'          => $id,
 		'action'      => admin_url( 'admin-post.php' ),
 		'button_text' => '' !== trim( $args['button_text'] ) ? $args['button_text'] : __( 'Versturen', 'goede-hosting' ),
 		'notice'      => $notice,
 		'hidden'      => $hidden,
 		'fields'      => $fields,
 		'rows'        => array_values( $groups ),
+		'privacy_url' => goede_hosting_contact_privacy_url(),
+	);
+}
+
+/**
+ * URL of the privacy statement shown under the form: the WordPress privacy page
+ * (Instellingen > Privacy), or what the filter goede_hosting_contact_privacy_url
+ * returns ('' = no link).
+ *
+ * @return string Unescaped URL.
+ */
+function goede_hosting_contact_privacy_url() {
+	return (string) apply_filters( 'goede_hosting_contact_privacy_url', (string) get_privacy_policy_url() );
+}
+
+/**
+ * After a redirect with a message: move the keyboard / screen reader focus to it,
+ * so it is announced (a role="alert" that is already there at page load often
+ * isn't). Printed in the footer; no script file needed.
+ *
+ * @param string $notice_id Id of the notice element.
+ */
+function goede_hosting_contact_focus_notice( $notice_id ) {
+	add_action(
+		'wp_footer',
+		function () use ( $notice_id ) {
+			// After "load": the browser's jump to the #anchor would otherwise reset the focus.
+			wp_print_inline_script_tag( '(function(){function f(){var n=document.getElementById(' . wp_json_encode( $notice_id ) . ');if(n){n.focus({preventScroll:true});}}if(document.readyState==="complete"){f();}else{window.addEventListener("load",f);}})();' );
+		},
+		20
 	);
 }
 

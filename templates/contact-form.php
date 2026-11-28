@@ -9,7 +9,8 @@
  *  - id           string  Form id (anchor the visitor returns to).
  *  - action       string  Form action URL.
  *  - button_text  string
- *  - notice       array|null  type (success|error) + text.
+ *  - notice       array|null  type (success|error), text, id (gets focus after a redirect; keep id + tabindex="-1").
+ *  - privacy_url  string  Privacy statement URL ('' = no link).
  *  - hidden       string  Hidden fields (nonce, honeypot, timestamp) – print as is.
  *  - fields       array   key => field (label, type, required, value, error, id, error_id …).
  *  - rows         array   Layout: group, label, required, fields (keys) per row.
@@ -27,7 +28,7 @@ defined( 'ABSPATH' ) || exit;
 ?>
 <form class="gh-form" id="<?php echo esc_attr( $args['id'] ); ?>" action="<?php echo esc_url( $args['action'] ); ?>" method="post">
 	<?php if ( $args['notice'] ) : ?>
-		<div class="gh-form__notice gh-form__notice--<?php echo esc_attr( $args['notice']['type'] ); ?>" role="<?php echo 'error' === $args['notice']['type'] ? 'alert' : 'status'; ?>">
+		<div class="gh-form__notice gh-form__notice--<?php echo esc_attr( $args['notice']['type'] ); ?>" id="<?php echo esc_attr( $args['notice']['id'] ); ?>" tabindex="-1" role="<?php echo 'error' === $args['notice']['type'] ? 'alert' : 'status'; ?>">
 			<p><?php echo esc_html( $args['notice']['text'] ); ?></p>
 		</div>
 	<?php endif; ?>
@@ -42,8 +43,8 @@ defined( 'ABSPATH' ) || exit;
 					<?php foreach ( $row['fields'] as $key ) : ?>
 						<?php $field = $args['fields'][ $key ]; ?>
 						<label class="gh-form__field">
-							<span class="screen-reader-text"><?php echo esc_html( $field['label'] ); ?></span>
-							<?php echo goede_hosting_contact_control( $field, '' === $field['placeholder'] ? array( 'placeholder' => $field['label'] ) : array() ); ?>
+							<span class="gh-form__sublabel"><?php echo esc_html( $field['label'] ); ?></span>
+							<?php echo goede_hosting_contact_control( $field ); ?>
 							<?php echo goede_hosting_contact_error( $field ); ?>
 						</label>
 					<?php endforeach; ?>
@@ -63,4 +64,15 @@ defined( 'ABSPATH' ) || exit;
 		<p class="gh-form__hint"><span aria-hidden="true">*</span> <?php esc_html_e( 'verplicht veld', 'goede-hosting' ); ?></p>
 		<button class="gh-form__button wp-element-button" type="submit"><?php echo esc_html( $args['button_text'] ); ?></button>
 	</div>
+	<?php if ( '' !== $args['privacy_url'] ) : ?>
+		<p class="gh-form__privacy">
+			<?php
+			printf(
+				/* translators: %s: link to the privacy statement. */
+				esc_html__( 'Lees in onze %s hoe we met je gegevens omgaan.', 'goede-hosting' ),
+				'<a href="' . esc_url( $args['privacy_url'] ) . '">' . esc_html__( 'privacyverklaring', 'goede-hosting' ) . '</a>'
+			);
+			?>
+		</p>
+	<?php endif; ?>
 </form>

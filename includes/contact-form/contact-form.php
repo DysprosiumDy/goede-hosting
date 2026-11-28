@@ -13,12 +13,15 @@
  *  - recipient and retention: Inzendingen > Instellingen.
  *
  * Flow: the form posts to admin-post.php (action goedehosting_contact). The
- * handler checks the nonce, honeypot, minimum fill time and rate limit, validates
- * the fields, stores the submission, mails it with Reply-To the sender and
- * redirects back: ?verzonden=1 on success, ?gh_fout=<code> for session, speed,
- * limit or send errors (nothing stored), ?gh_fout=<token> for field errors (the
- * entered values wait in a short-lived transient; only after the session checks
- * passed, and those attempts count toward the rate limit).
+ * handler checks the honeypot and the limit per IP address (every attempt
+ * counts), then the nonce and form timestamp (minimum fill time, maximum age),
+ * validates the fields, stores the submission, mails it with Reply-To the sender
+ * (unless the site-wide hourly cap is reached: then it is only stored) and
+ * redirects back: ?verzonden=1 on success, ?gh_fout=<code> for limit or send
+ * errors (nothing stored), ?gh_fout=<token> for an expired session, a too fast
+ * submission or field errors (the entered values wait 15 minutes in a transient,
+ * so nothing typed is lost). The IP address is only used, hashed, for the limit
+ * and is not stored with the submission.
  *
  * @package GoedeHosting
  */
@@ -37,8 +40,14 @@ const GOEDE_HOSTING_CONTACT_MIN_SECONDS = 3;
 /** Attempts per IP address (IPv6: per /64 network) per hour. */
 const GOEDE_HOSTING_CONTACT_RATE_LIMIT = 5;
 
-/** Attempts for the whole site per hour (spread-out abuse, shared proxy IPs). */
+/**
+ * Submissions for the whole site per hour that are mailed. Above it they are only
+ * stored (spread-out abuse can't fill the mailbox or block the form).
+ */
 const GOEDE_HOSTING_CONTACT_SITE_LIMIT = 30;
+
+/** Seconds a form stays valid after the page was generated (2 hours). */
+const GOEDE_HOSTING_CONTACT_MAX_AGE = 7200;
 
 /**
  * Form fields. Each field:
@@ -179,9 +188,9 @@ function goede_hosting_contact_summary( $values, $fields = null ) {
  */
 function goede_hosting_contact_messages() {
 	return array(
-		'sessie'  => __( 'Je sessie is verlopen. Verstuur het formulier opnieuw.', 'goede-hosting' ),
+		'sessie'  => __( 'Je sessie is verlopen. Je bericht staat er nog: verstuur het formulier opnieuw.', 'goede-hosting' ),
 		'snel'    => __( 'Dat ging wel erg snel. Wacht een paar seconden en verstuur het formulier opnieuw.', 'goede-hosting' ),
-		'limiet'  => __( 'Er zijn het afgelopen uur al veel berichten verstuurd. Probeer het later opnieuw.', 'goede-hosting' ),
+		'limiet'  => __( 'Vanaf jouw verbinding zijn het afgelopen uur al veel berichten verstuurd. Probeer het later opnieuw.', 'goede-hosting' ),
 		'mislukt' => __( 'Je bericht kon niet worden verstuurd. Probeer het later opnieuw.', 'goede-hosting' ),
 	);
 }

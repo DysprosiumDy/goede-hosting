@@ -310,7 +310,9 @@ function goede_hosting_inzending_detail_box( $post ) {
 		}
 		$rows[ $label ] = $html;
 	}
-	$rows[ __( 'Mail verzonden', 'goede-hosting' ) ]  = ( $mailed ? esc_html__( 'Ja', 'goede-hosting' ) : esc_html__( 'Nee', 'goede-hosting' ) ) . ( '' !== $to ? ' <span class="description">(' . esc_html( $to ) . ')</span>' : '' );
+	$limit = '1' === goede_hosting_inzending_meta( $post->ID, 'limiet' );
+	$rows[ __( 'Mail verzonden', 'goede-hosting' ) ]  = ( $mailed ? esc_html__( 'Ja', 'goede-hosting' ) : esc_html__( 'Nee', 'goede-hosting' ) ) . ( '' !== $to ? ' <span class="description">(' . esc_html( $to ) . ')</span>' : '' )
+		. ( $limit ? '<br><span class="description">' . esc_html__( 'Niet gemaild: het formulier had dat uur al veel berichten ontvangen (bescherming tegen misbruik). Het bericht is wel bewaard.', 'goede-hosting' ) . '</span>' : '' );
 	$rows[ __( 'Verstuurd vanaf', 'goede-hosting' ) ] = '' !== $page ? '<a href="' . esc_url( $page ) . '">' . esc_html( $page ) . '</a>' : '';
 
 	echo '<table class="form-table goede-hosting-inzending" role="presentation"><tbody>';
@@ -470,6 +472,13 @@ add_action( 'init', 'goede_hosting_inzending_schedule' );
  * Deletes submissions older than the retention period (in batches).
  */
 function goede_hosting_inzending_cleanup() {
+	// 1.1.0 kept a hashed IP with every submission; it is only needed for the
+	// one-hour rate limit, so remove it once from the stored ones.
+	if ( '1' !== get_option( 'goede_hosting_ip_hash_purged' ) ) {
+		delete_post_meta_by_key( '_gh_ip_hash' );
+		update_option( 'goede_hosting_ip_hash_purged', '1', false );
+	}
+
 	$months = goede_hosting_contact_retention();
 	if ( $months <= 0 ) {
 		return;

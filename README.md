@@ -3,7 +3,7 @@
 Basic functionality for every WordPress site Goede Hosting builds. Generic: no client details, texts or design
 are built in; every site fills its own details and every theme can adapt fields, markup and styling.
 
-Requires WordPress 6.6+. Updates itself from the latest GitHub Release (asset `goede-hosting.zip`, checked at most every
+Requires WordPress 6.6+ and PHP 8.5+. Updates itself from the latest GitHub Release (asset `goede-hosting.zip`, checked at most every
 six hours; *Dashboard > Updates > Opnieuw controleren* checks right away).
 
 ## Modules
@@ -50,13 +50,23 @@ Block **Goede Hosting Contactformulier** (`goede-hosting/contact-form`: button t
 - Recipient: the block's own address (only on pages written and last edited by an administrator), else
   Inzendingen > Instellingen, else the company e-mail, else the admin e-mail. A theme block can carry a recipient too:
   filter `goede_hosting_contact_form_blocks`.
-- Spam protection: nonce, honeypot, minimum fill time (3 s), 5 attempts per IP per hour (IPv6 per /64), 30 per hour
-  site-wide. Requests that fail the session checks store nothing.
+- Spam protection: nonce, honeypot, minimum fill time (3 s), form valid for 2 hours, 5 attempts per IP per hour
+  (IPv6 per /64; every attempt counts). Site-wide, only 30 per hour are mailed: the rest is stored without mail
+  (marked in the submission), so a flood can't block the form. An expired session or too fast submission sends the
+  visitor back with what they typed (kept 15 minutes).
+- Behind a proxy that doesn't restore the visitor's IP: `define( 'GOEDE_HOSTING_PROXY_IP_HEADER', 'HTTP_CF_CONNECTING_IP' );`
+  in wp-config.php (or filter `goede_hosting_contact_proxy_ip_header`). Only when every request passes that proxy.
 - Submissions: post type `gh_inzending`, read-only, admins only, deleted after the retention period
-  (Inzendingen > Instellingen, default 24 months), included in WordPress' personal data export/erase.
+  (Inzendingen > Instellingen, default 24 months), included in WordPress' personal data export/erase. The IP address
+  is only used (hashed) for the limit and not stored with a submission.
+- Mail: From "<site name>" with the company e-mail when it is on the site's domain, else `wordpress@<domain>`
+  (filter `goede_hosting_contact_from_email`; '' leaves it to WordPress / an SMTP plugin). Reply-To is the sender.
+  Make sure the host (or an SMTP plugin) sends with SPF/DKIM for that domain.
+- Privacy link under the form: the WordPress privacy page (filter `goede_hosting_contact_privacy_url`).
 - Other hooks: `goede_hosting_contact_errors` (extra validation), `goede_hosting_contact_recipient`,
   `goede_hosting_contact_submitted` (action), `goede_hosting_contact_anchor`.
-- Page caching: exclude the contact page; the nonce expires after 12–24 hours.
+- Page caching: exclude the contact page if you can; a cached form still works once (the visitor is sent back with
+  their text and a fresh form).
 
 ## Content package (`importer`)
 A zip with `manifest.json`, `pages/<key>.html` (block markup) and `media/<file>` (jpg, png, webp, svg; max 20 MB in total).
@@ -84,6 +94,6 @@ Off until *Zwevende WhatsApp-knop tonen* is ticked in Bedrijfsgegevens and a Wha
 `goede_hosting_whatsapp_button_html`.
 
 ## Development
-WordPress Coding Standards + PHP 7.4 compatibility: `phpcs` in this folder (`phpcs.xml.dist`), `phpcbf` fixes spacing.
+WordPress Coding Standards + PHP 8.5 compatibility: `phpcs` in this folder (`phpcs.xml.dist`), `phpcbf` fixes spacing.
 Release: bump `Version` in `goede-hosting.php` and `GOEDE_HOSTING_VERSION`, zip the folder as `goede-hosting/…` into
 `goede-hosting.zip`, and publish a GitHub Release `v<version>` with that asset.

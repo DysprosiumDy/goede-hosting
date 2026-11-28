@@ -8,12 +8,39 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Hashed client IP (never stored in plain text).
+ * The visitor's IP address.
+ *
+ * REMOTE_ADDR, unless the site sits behind a proxy (Cloudflare, a load balancer)
+ * that doesn't restore the real address: then name the header that proxy sends,
+ * e.g. define( 'GOEDE_HOSTING_PROXY_IP_HEADER', 'HTTP_CF_CONNECTING_IP' ); in
+ * wp-config.php, or use the filter goede_hosting_contact_proxy_ip_header. Only set
+ * it when every request really passes that proxy, or visitors could fake their
+ * address.
+ *
+ * @return string
+ */
+function goede_hosting_contact_client_ip() {
+	$ip     = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
+	$header = (string) apply_filters( 'goede_hosting_contact_proxy_ip_header', defined( 'GOEDE_HOSTING_PROXY_IP_HEADER' ) ? (string) GOEDE_HOSTING_PROXY_IP_HEADER : '' );
+	$header = strtoupper( (string) preg_replace( '/[^A-Za-z0-9_]/', '', $header ) );
+	if ( '' !== $header && isset( $_SERVER[ $header ] ) && is_string( $_SERVER[ $header ] ) ) {
+		// X-Forwarded-For style lists: the first entry is the visitor.
+		$parts = explode( ',', sanitize_text_field( wp_unslash( $_SERVER[ $header ] ) ) );
+		$first = trim( $parts[0] );
+		if ( false !== filter_var( $first, FILTER_VALIDATE_IP ) ) {
+			$ip = $first;
+		}
+	}
+	return $ip;
+}
+
+/**
+ * Hashed client IP, only used for the rate limit (never stored with a submission).
  *
  * @return string
  */
 function goede_hosting_contact_ip_hash() {
-	$ip = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
+	$ip = goede_hosting_contact_client_ip();
 	// IPv6: count per /64 network, one connection can pick any address inside it.
 	if ( false !== filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) ) {
 		$packed = inet_pton( $ip );
@@ -163,15 +190,18 @@ function goede_hosting_contact_fail_code( $post_id, $code ) {
  * @param int                  $post_id Post that holds the form.
  * @param array<string,string> $values  Entered values.
  * @param array<string,string> $errors  Field errors.
+ * @param string               $code    Optional key of goede_hosting_contact_messages()
+ *                                      for a general error (expired session …).
  */
-function goede_hosting_contact_fail( $post_id, $values, $errors ) {
-	$token = strtolower( wp_generate_password( 20, false, false ) );
+function goede_hosting_contact_fail( $post_id, $values, $errors, $code = '' ) {
+	$messages = goede_hosting_contact_messages();
+	$token    = strtolower( wp_generate_password( 20, false, false ) );
 	set_transient(
 		'goedehosting_contact_' . $token,
 		array(
 			'values'  => $values,
 			'errors'  => $errors,
-			'general' => '',
+			'general' => isset( $messages[ $code ] ) ? $messages[ $code ] : '',
 		),
 		15 * MINUTE_IN_SECONDS
 	);
@@ -202,27 +232,29 @@ function goede_hosting_contact_handle() {
 	$nonce    = isset( $_POST['gh_nonce'] ) && is_string( $_POST['gh_nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['gh_nonce'] ) ) : '';
 	// phpcs:enable
 
-	if ( ! wp_verify_nonce( $nonce, 'goedehosting_contact' ) ) {
-		goede_hosting_contact_fail_code( $post_id, 'sessie' );
-	}
-
 	// Bots that fill in the hidden field get a fake success and nothing is stored.
 	if ( '' !== $honeypot ) {
 		goede_hosting_contact_redirect( $post_id, 'verzonden', '1' );
 	}
 
-	$parts = explode( '.', $stamp, 2 );
-	$valid = 2 === count( $parts ) && ctype_digit( $parts[0] ) && hash_equals( goede_hosting_contact_stamp_hash( $parts[0] ), $parts[1] );
-	if ( ! $valid || time() - (int) $parts[0] < GOEDE_HOSTING_CONTACT_MIN_SECONDS ) {
-		goede_hosting_contact_fail_code( $post_id, 'snel' );
+	// Every attempt counts toward the limit per IP address, also ones that fail the
+	// checks below: those keep the entered values for a few minutes, so this caps
+	// how much one visitor can store.
+	if ( ! goede_hosting_contact_count_attempt( 'goedehosting_contact_rl_' . substr( goede_hosting_contact_ip_hash(), 0, 32 ), GOEDE_HOSTING_CONTACT_RATE_LIMIT ) ) {
+		goede_hosting_contact_fail_code( $post_id, 'limiet' );
 	}
 
-	// Every attempt that passed the session checks counts, also ones with field errors
-	// (those store the entered values for a few minutes).
-	$ip_hash = goede_hosting_contact_ip_hash();
-	if ( ! goede_hosting_contact_count_attempt( 'goedehosting_contact_rl_' . substr( $ip_hash, 0, 32 ), GOEDE_HOSTING_CONTACT_RATE_LIMIT )
-		|| ! goede_hosting_contact_count_attempt( 'goedehosting_contact_rl_site', GOEDE_HOSTING_CONTACT_SITE_LIMIT ) ) {
-		goede_hosting_contact_fail_code( $post_id, 'limiet' );
+	// Expired nonce or form timestamp, typically a page served from a cache: send the
+	// visitor back with what they typed (the new URL is not cached, so the form
+	// they get then is fresh).
+	$parts = explode( '.', $stamp, 2 );
+	$valid = 2 === count( $parts ) && ctype_digit( $parts[0] ) && hash_equals( goede_hosting_contact_stamp_hash( $parts[0] ), $parts[1] );
+	$age   = $valid ? time() - (int) $parts[0] : 0;
+	if ( ! wp_verify_nonce( $nonce, 'goedehosting_contact' ) || ( $valid && $age > GOEDE_HOSTING_CONTACT_MAX_AGE ) ) {
+		goede_hosting_contact_fail( $post_id, $values, array(), 'sessie' );
+	}
+	if ( ! $valid || $age < GOEDE_HOSTING_CONTACT_MIN_SECONDS ) {
+		goede_hosting_contact_fail( $post_id, $values, array(), 'snel' );
 	}
 
 	$errors = array();
@@ -245,6 +277,11 @@ function goede_hosting_contact_handle() {
 		goede_hosting_contact_fail( $post_id, $values, $errors );
 	}
 
+	// Site-wide cap (many addresses at once): above it the message is still stored
+	// and the visitor sees the normal confirmation, but no mail goes out, so a flood
+	// can neither fill the mailbox nor block the form for real visitors.
+	$over_limit = ! goede_hosting_contact_count_attempt( 'goedehosting_contact_rl_site', GOEDE_HOSTING_CONTACT_SITE_LIMIT );
+
 	$email_key = goede_hosting_contact_email_key( $fields );
 	$email     = '' !== $email_key ? strtolower( $values[ $email_key ] ) : '';
 	$recipient = goede_hosting_contact_recipient( $post_id );
@@ -255,8 +292,8 @@ function goede_hosting_contact_handle() {
 		'_gh_email'          => $email,
 		'_gh_pagina'         => esc_url_raw( $source ),
 		'_gh_ontvanger'      => $recipient,
-		'_gh_ip_hash'        => $ip_hash,
 		'_gh_mail_verzonden' => '0',
+		'_gh_limiet'         => $over_limit ? '1' : '0',
 	);
 	foreach ( $values as $name => $value ) {
 		$meta[ '_gh_' . $name ] = $email_key === $name ? $email : $value;
@@ -275,7 +312,7 @@ function goede_hosting_contact_handle() {
 	);
 	$entry_id = is_wp_error( $entry_id ) ? 0 : (int) $entry_id;
 
-	$sent = goede_hosting_contact_send_mail( $values, $fields, $recipient, $entry_id, $source );
+	$sent = $over_limit ? false : goede_hosting_contact_send_mail( $values, $fields, $recipient, $entry_id, $source );
 	if ( $entry_id ) {
 		update_post_meta( $entry_id, '_gh_mail_verzonden', $sent ? '1' : '0' );
 	}
@@ -329,7 +366,11 @@ function goede_hosting_contact_send_mail( $values, $fields, $recipient, $entry_i
 		$lines[] = __( 'Bekijk de inzending:', 'goede-hosting' ) . ' ' . admin_url( 'post.php?post=' . $entry_id . '&action=edit' );
 	}
 
-	$headers   = array( 'Content-Type: text/plain; charset=UTF-8' );
+	$headers = array( 'Content-Type: text/plain; charset=UTF-8' );
+	$from    = goede_hosting_contact_from_header();
+	if ( '' !== $from ) {
+		$headers[] = $from;
+	}
 	$email_key = goede_hosting_contact_email_key( $fields );
 	if ( '' !== $email_key && is_email( $values[ $email_key ] ) ) {
 		// Header-safe display name: no quotes, angle brackets, commas or line breaks.
@@ -338,4 +379,30 @@ function goede_hosting_contact_send_mail( $values, $fields, $recipient, $entry_i
 	}
 
 	return (bool) wp_mail( $recipient, $subject, implode( "\n", $lines ), $headers );
+}
+
+/**
+ * From header for the notification mail: the site name with an address on the
+ * site's own domain, so SPF/DKIM of that domain can apply. Uses the company
+ * e-mail when it is on the site's domain, otherwise wordpress@<domain> (what
+ * WordPress itself would use). Filter goede_hosting_contact_from_email to pick
+ * another address, or return '' to leave the From header to WordPress / an SMTP
+ * plugin.
+ *
+ * @return string Header line, or ''.
+ */
+function goede_hosting_contact_from_header() {
+	$host = strtolower( (string) wp_parse_url( network_home_url(), PHP_URL_HOST ) );
+	$host = (string) preg_replace( '/^www\./', '', $host );
+	if ( '' === $host ) {
+		return '';
+	}
+	$company = function_exists( 'goede_hosting_company' ) ? sanitize_email( goede_hosting_company( 'email' ) ) : '';
+	$default = is_email( $company ) && strtolower( substr( strrchr( $company, '@' ), 1 ) ) === $host ? $company : 'wordpress@' . $host;
+	$address = sanitize_email( (string) apply_filters( 'goede_hosting_contact_from_email', $default ) );
+	if ( ! is_email( $address ) ) {
+		return '';
+	}
+	$name = trim( (string) preg_replace( '/[\s"<>,;]+/', ' ', wp_specialchars_decode( (string) get_bloginfo( 'name' ), ENT_QUOTES ) ) );
+	return 'From: ' . ( '' !== $name ? '"' . $name . '" <' . $address . '>' : $address );
 }

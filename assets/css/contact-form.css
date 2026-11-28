@@ -92,6 +92,21 @@
 	opacity: 0.7;
 }
 
+/* Visible label of a field inside a group (first name / last name) */
+.gh-form__sublabel {
+	font-size: 0.875em;
+}
+
+.gh-form__privacy {
+	margin: 12px 0 0;
+	font-size: 0.875em;
+	opacity: 0.8;
+}
+
+.gh-form__notice:focus {
+	outline: none;
+}
+
 .gh-form .screen-reader-text {
 	position: absolute;
 	width: 1px;

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.1 (2026-11-28)
+- Contact form:
+  - The site-wide limit (30 per hour) no longer blocks the form: above it messages are stored but not mailed, and the visitor sees the normal confirmation. The limit per IP address (5 per hour) now counts every attempt.
+  - An expired session or form (cached page, form older than 2 hours) or a too fast submission keeps what the visitor typed, instead of losing it.
+  - The hashed IP address is no longer stored with a submission (it was only needed for the limit); the daily cleanup removes it once from existing ones.
+  - Mail has a From header with the site name and an address on the site's own domain (filter `goede_hosting_contact_from_email`).
+  - Behind a proxy that doesn't pass the real IP address: set `GOEDE_HOSTING_PROXY_IP_HEADER` (e.g. `HTTP_CF_CONNECTING_IP`) or the filter `goede_hosting_contact_proxy_ip_header`.
+  - After a failed or successful submission the message gets keyboard/screen reader focus. Fields inside a group (first/last name) have visible labels instead of placeholder text. Link to the privacy statement under the form (`goede_hosting_contact_privacy_url`, default the WordPress privacy page).
+- Importer: SVG files must be UTF-8 and are checked for a DOCTYPE after parsing too; attributes are checked by local name (any namespace prefix). The temp dir fallback in uploads is now `uploads/.ht-goedehosting-import` (denied by the usual nginx rules as well); old temp dirs in the uploads root are still cleaned up.
+
 ## 1.1.0 (2026-11-28)
 - New modules, moved from the Goede Hosting theme and made generic (no client details or texts built in):
   - **company**: Instellingen > Bedrijfsgegevens, shortcodes, block bindings source `goedehosting/company`. All fields empty by default; extra fields via a filter.
